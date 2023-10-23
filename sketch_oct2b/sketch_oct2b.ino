@@ -33,6 +33,7 @@ const char* schedulerAddress = "http://192.168.1.181/sys/ResetScheduler.php";
 
 volatile bool accessGranted = false;
 volatile int timeCheck = 0;
+volatile int failCount = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -45,6 +46,9 @@ void setup() {
 
   // set master brightness control
   FastLED.setBrightness(BRIGHTNESS);
+
+  setAll(CRGB::Black);
+  delay(1000);
 
   // Add multiple WiFi networks for redundancy
   wifiMulti.addAP(ssid1, password1);
@@ -67,7 +71,40 @@ void setup() {
 }
 
 void loop() {
-  // Connect to WiFi networks
+  // Check WiFi connection status
+  if (WiFi.status() != WL_CONNECTED) {
+    setAll(CRGB::GhostWhite);
+    Serial.println("WiFi disconnected. Reconnecting...");
+    connectToWiFi();
+  } else {
+    if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
+      Serial.println("Card recognised, calculating...");
+      cardID = "";
+      for (byte i = 0; i < rfid.uid.size; i++) {
+        cardID.concat(String(rfid.uid.uidByte[i] < 0x10 ? "0" : ""));
+        cardID.concat(String(rfid.uid.uidByte[i], HEX));
+      }
+      Serial.println(cardID);
+      Serial.println("Found card:");
+      Serial.println(cardID);
+      rfid.PICC_HaltA();       // halt PICC
+      rfid.PCD_StopCrypto1();  // stop encryption on PCD
+
+      if (sendHTTPPostRequest(cardID)) {
+        Serial.println("Access granted.");
+        setAll(CRGB::Green);  // Set Neopixels to green for access granted
+        accessGranted = true;
+      } else {
+        Serial.println("Access denied.");
+        setAll(CRGB::Red);  // Set Neopixels to red for access denied
+        accessGranted = false;
+      }
+      FastLED.show();
+      delay(1000);  // Delay to prevent multiple scans from the same card.
+      resetLEDs();  // Reset Neopixels to blue or initial state
+    }
+  }
+
   if (timeCheck == 60) {
     timeCheck = 0;
     struct tm timeinfo;
@@ -107,38 +144,29 @@ void loop() {
     timeCheck++;
     Serial.println(timeCheck);
   }
-
-
-  if (wifiMulti.run() == WL_CONNECTED) {
-    if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
-      cardID = "";
-      for (byte i = 0; i < rfid.uid.size; i++) {
-        cardID.concat(String(rfid.uid.uidByte[i] < 0x10 ? "0" : ""));
-        cardID.concat(String(rfid.uid.uidByte[i], HEX));
-      }
-      Serial.println(cardID);
-      rfid.PICC_HaltA();       // halt PICC
-      rfid.PCD_StopCrypto1();  // stop encryption on PCD
-
-      if (sendHTTPPostRequest(cardID)) {
-        Serial.println("Access granted.");
-        setAll(CRGB::Green);  // Set Neopixels to green for access granted
-        accessGranted = true;
-      } else {
-        Serial.println("Access denied.");
-        setAll(CRGB::Red);  // Set Neopixels to red for access denied
-        accessGranted = false;
-      }
-      FastLED.show();
-      delay(3000);  // Delay to prevent multiple scans from the same card.
-      resetLEDs();  // Reset Neopixels to blue or initial state
-    }
-  }
-  //printCurrentTime();
   delay(500);
 }
 
+void connectToWiFi() {
+  Serial.println("Connecting to WiFi...");
+  if (wifiMulti.run(1000) == WL_CONNECTED) {
+    setAll(CRGB::DarkBlue);
+    Serial.println("WiFi reconnected");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
+    failCount = 0;
+  } else {
+    Serial.println("Failed to reconnect to WiFi.");
+    failCount += 1;
+  }
+  if(failCount > 12){
+    //Reset
+    ESP.restart();
+  }
+}
+
 bool sendHTTPPostRequest(String cardID) {
+  
   WiFiClient client;
   HTTPClient http;
 
@@ -202,12 +230,12 @@ void enableScheduler() {
   int httpCode = http.POST("A");
   if (httpCode == HTTP_CODE_OK) {
     String payload = http.getString();
-    Serial.println(payload);
+    //Serial.println(payload);
     http.end();
     return;
   } else {
-    Serial.println(httpCode);
-    Serial.println("Failed to upload values.");
+    //Serial.println(httpCode);
+    Serial.println("Failed to enable scheduler.");
     http.end();
     return;
   }
