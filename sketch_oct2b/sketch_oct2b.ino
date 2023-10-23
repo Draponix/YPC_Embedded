@@ -15,7 +15,7 @@
 #define BRIGHTNESS 255         // Neopixel brightness
 #define LED_TYPE WS2812B
 #define COLOR_ORDER GRB
-#define CLOSING_HOUR 20
+#define CLOSING_HOUR 22
 
 MFRC522 rfid(SS_PIN, RST_PIN);
 WiFiMulti wifiMulti;
@@ -27,9 +27,9 @@ const char* ssid1 = "Zyxel_A221";
 const char* password1 = "HKYMNJ7F4J";
 const char* ssid2 = "BT-8CCJKS";
 const char* password2 = "TYrUXrXLUm6cuY";
-const char* actionAddress = "http://192.168.1.181/sys/dbwrite.php";
-const char* outageAddress = "http://192.168.1.181/sys/dbout.php";
-const char* schedulerAddress = "http://192.168.1.181/sys/ResetScheduler.php";
+const char* actionAddress = "http://192.168.1.184/YPC/fobAction.php";
+const char* outageAddress = "http://192.168.69.69/sys/dbout.php";
+const char* schedulerAddress = "http://192.168.69.69/sys/ResetScheduler.php";
 
 volatile bool accessGranted = false;
 volatile int timeCheck = 0;
@@ -142,7 +142,6 @@ void loop() {
     }
   } else {
     timeCheck++;
-    Serial.println(timeCheck);
   }
   delay(500);
 }
@@ -173,6 +172,7 @@ bool sendHTTPPostRequest(String cardID) {
   if (http.begin(client, actionAddress)) {
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
     String postData = "cardID=" + cardID;
+    Serial.println(postData);
     int httpCode = http.POST(postData);
 
     if (httpCode == HTTP_CODE_OK) {
@@ -187,7 +187,6 @@ bool sendHTTPPostRequest(String cardID) {
   } else {
     Serial.println("Connection to the server failed.");
   }
-
   return false;
 }
 
